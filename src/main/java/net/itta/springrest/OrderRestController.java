@@ -5,8 +5,12 @@
  */
 package net.itta.springrest;
 
+import com.fasterxml.jackson.annotation.PropertyAccessor;
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.stream.Stream;
+import org.springframework.beans.BeanWrapper;
+import org.springframework.beans.PropertyAccessorFactory;
 import org.springframework.stereotype.*;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -77,45 +81,62 @@ public class OrderRestController {
         return p;
     }
     
-    @RequestMapping(value = "/orders/{no}/patch", method = RequestMethod.POST)
+    @RequestMapping(value = "/orders/{no}", method = RequestMethod.PATCH)
     public Order patchOrderJSONbyNo(@PathVariable int no, @RequestBody PatchObject patchObject) 
             throws NoSuchFieldException, IllegalArgumentException, IllegalAccessException{
         Order p =getOrderJSONbyNo(no);   
-        Class<?> clazz = Order.class;
-        List<String> pnames = patchObject.getPropertyNames();
+        String[] pnames = patchObject.getPropertyNames();
+        Object[] values= patchObject.getValues();
+        BeanWrapper paccessor= PropertyAccessorFactory.forBeanPropertyAccess(p);
         
-        for (int i = 0; i < pnames.size(); i++) {
-            Field field= clazz.getField(pnames.get(i));
-            field.setAccessible(true);
-            field.set(p, patchObject.getValues()[i]);
+        for (int i = 0; i < pnames.length; i++) {           
+            paccessor.setPropertyValue(pnames[i], values[i]);
         }
         return p;
     }
+    
+    @RequestMapping(value = "/orders/{no}/produit/{id}", method = RequestMethod.PATCH)
+    public Produit patchProductJSONbyNo(@PathVariable int no, 
+            @PathVariable int id,
+            @RequestBody PatchObject patchObject) 
+            throws NoSuchFieldException, IllegalArgumentException, IllegalAccessException{
+        Produit pdt= getAllProductsForOrderJSONbyNo(no).stream().filter(p->p.getId()==id).findFirst().orElse(null);   
+        String[] pnames = patchObject.getPropertyNames();
+        Object[] values= patchObject.getValues();
+        BeanWrapper paccessor= PropertyAccessorFactory.forBeanPropertyAccess(pdt);
+        
+        for (int i = 0; i < pnames.length; i++) {           
+            paccessor.setPropertyValue(pnames[i], values[i]);
+        }
+        return pdt;
+    }
 }
 class PatchObject{
-    private List<String> propertyNames;
-    private Object[] values;
+    private String[] propertyNames;
+    private HashMap<String,Object>[] values;
 
-    public PatchObject(String toto) {
-        System.out.println(toto);
+    public PatchObject(String[] propertyNames, HashMap[] values) {
+        this.propertyNames = propertyNames;
+        this.values = values;
     }
 
-    
-    
-    public List<String> getPropertyNames() {
+    public PatchObject() {
+    }
+
+    public String[] getPropertyNames() {
         return propertyNames;
     }
 
-    public void setFields(List<String> fields) {
-        this.propertyNames = fields;
-    }
-
     public Object[] getValues() {
-        return values;
+        return Stream.of(values).flatMap(m->m.entrySet().stream()).map(n->n.getValue()).toArray();
     }
 
-    public void setValues(Object[] values) {
+    public void setValues(HashMap[] values) {
         this.values = values;
+    }
+
+    public void setPropertyNames(String[] propertyNames) {
+        this.propertyNames = propertyNames;
     }
     
     
