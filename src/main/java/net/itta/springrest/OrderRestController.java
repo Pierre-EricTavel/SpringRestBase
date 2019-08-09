@@ -6,14 +6,23 @@
 package net.itta.springrest;
 
 import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.PropertyAccessorFactory;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -25,7 +34,7 @@ public class OrderRestController {
 
     private List<Order> orders = new ArrayList<>();
 
-    private List<Order> getOrders() {
+    List<Order> getOrders() {
         if (orders.isEmpty()) {
             Produit p1 = new Produit(0, "a", "aaaaaa", 12.5);
             Produit p2 = new Produit(1, "a1", "bbbbbbbb", 120.5);
@@ -40,7 +49,7 @@ public class OrderRestController {
             lp2.add(p3);
             lp2.add(p2);
 
-            Order o1 = new Order(0, new Date(2019, 4, 20), 0, lp1);
+            Order o1 = new Order(0, new Date(2019, 4, 20), 1, lp1);
             Order o2 = new Order(1, new Date(2018, 5, 10), 0, lp2);
             orders.add(o2);
             orders.add(o1);
@@ -48,64 +57,131 @@ public class OrderRestController {
         return orders;
     }
 
-    @RequestMapping("/orders")
-    public List<Order> getAllOrdersJSON() {
-        return getOrders();
+    
+    
+    List<Order> filter ( List<Order> orders, String orderby,int limit, int skip ){
+        Stream<Order> so =null;
+        if(orderby!=null && !orderby.isEmpty()){
+            String[] fields =orderby.split(",");
+            Function<Order, Integer> name=null;
+            for (String field : fields) {
+                String[] ob=field.split(":");
+                switch(ob[0]){
+                    case "IdClient":
+                        name = Order::getIdClient;
+                        break;
+                    case "no":
+                        name = Order::getNo;
+                        break;
+                    }       
+                    if(ob[1].equals("desc"))
+                        so=orders.stream().sorted(Comparator.comparing(name).reversed()).skip(skip).limit(limit);
+                    else
+                        so=orders.stream().sorted(Comparator.comparing(name)).skip(skip).limit(limit); 
+            }
+            return so.collect(Collectors.toList());
+        }
+        else
+            so=orders.stream();
+       return so.skip(skip).limit(limit).collect(Collectors.toList());
+    
     }
 
-    @RequestMapping("/orders/{no}")
+    @GetMapping("/orders")
+    public List<Order> getAllOrdersJSON(
+            @RequestParam(required = false) String orderby,
+            @RequestParam(defaultValue = "50",required = false) int limit, 
+            @RequestParam(defaultValue = "0",required = false) int skip ) {
+        
+        return filter(getOrders(), orderby, limit,  skip);
+    }
+
+    @GetMapping("/orders/{no}")
     public Order getOrderJSONbyNo(@PathVariable int no) {
         return getOrders().stream().filter(o -> o.getNo() == no).findFirst().orElse(null);
     }
-
-    @RequestMapping("/orders/{no}/produits")
+   
+    @GetMapping("/orders/{no}/produits")
     public List<Produit> getAllProductsForOrderJSONbyNo(@PathVariable int no) {
         return getOrderJSONbyNo(no).getProduits();
     }
 
-    @RequestMapping("/orders/{no}/produit/{id}")
+    @GetMapping("/orders/{no}/produit/{id}")
     public Produit getProduitbyIdForOrderJSONbyNo(@PathVariable int no, @PathVariable int id) {
         return getAllProductsForOrderJSONbyNo(no).stream().filter(p -> p.getId() == id).findFirst().orElse(null);
     }
 
-    @RequestMapping(value = "/orders/{no}", method = RequestMethod.DELETE)
+    @DeleteMapping(value = "/orders/{no}")
     public Order deleteOrderJSONbyNo(@PathVariable int no) {
         Order p = getOrderJSONbyNo(no);
         getOrders().remove(p);
         return p;
     }
+ @DeleteMapping("/orders/{no}/produit/{id}")
+    public boolean deleteProduitbyIdForOrderJSONbyNo(@PathVariable int no, @PathVariable int id) {
+        Order o = getOrderJSONbyNo(no);
+        return o.getProduits().removeIf(p->p.getId()==id);
 
-    @RequestMapping(value = "/orders/{no}", method = RequestMethod.PUT)
-    public Order updateOrderJSONbyNo(@PathVariable int no, Order modified) {
-        Order p = getOrderJSONbyNo(no);
-        getOrders().remove(p);
-        return p;
     }
+    @PutMapping(value = "/orders/{no}")
+    public Order updateOrderJSONbyNo(@PathVariable int no,  @RequestBody Order modified) {
+        Order o = getOrderJSONbyNo(no);
+        BeanUtils.copyProperties(modified, o, "no");
+        return o;
+    }
+    
 
-    @RequestMapping(value = "/orders/{no}", method = RequestMethod.PATCH)
-    public Order patchOrderJSONbyNo(@PathVariable int no, @RequestBody HashMap[] objects)
+    
+    @PostMapping(value = "/orders")
+    public boolean addOrderJSON( @RequestBody Order added) {
+        if(!getOrders().stream().anyMatch(o->o.getNo()==added.getNo())){
+            return getOrders().add(added);
+        }
+        return false;  
+    }
+    
+    @PostMapping(value = "/orders/{no}")
+    public Boolean addProduitInOrderJSON(@PathVariable int no, @RequestBody Produit added) {
+        Order o = getOrderJSONbyNo(no);
+        if(o.getProduits().stream().allMatch(p->p.getId() !=added.getId())){
+            return o.getProduits().add(added);
+        }
+        return false;  
+    }
+    
+     @PutMapping(value = "/orders/{no}/produit/{id}")
+    public Produit updateProduitForOrderJSONbyNo(@PathVariable int no, @PathVariable int id , @RequestBody Produit modified) {
+       Produit p = getProduitbyIdForOrderJSONbyNo(no, id);
+       BeanUtils.copyProperties(modified, p, "id");
+       return p;
+    }
+    
+    @PatchMapping(value = "/orders/{no}")
+    public Order updateOrderJSONbyNo(@PathVariable int no, @RequestBody HashMap[] properties)
             throws NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
         Order o = getOrderJSONbyNo(no);
-        ApplyProperties(objects, o);
+        applyProperties(properties, o);
         return o;
     }
 
-    @RequestMapping(value = "/orders/{no}/produit/{id}", method = RequestMethod.PATCH)
-    public Produit patchProductJSONbyNo(@PathVariable int no,
-            @PathVariable int id,  @RequestBody HashMap[] objects)
+    @PatchMapping(value = "/orders/{no}/produit/{id}")
+    public Produit updateProduitJSONbyNo(@PathVariable int no,
+            @PathVariable int id,  @RequestBody HashMap[] properties)
             throws NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
-        Produit pdt = getAllProductsForOrderJSONbyNo(no).stream().filter(p -> p.getId() == id).findFirst().orElse(null);
-        ApplyProperties(objects, pdt);
+        Produit pdt = getProduitbyIdForOrderJSONbyNo(no, id);
+        applyProperties(properties, pdt);
         return pdt;
     }
 
-    void ApplyProperties(HashMap<String, Object>[] values, Object pdt) throws BeansException {
-        String[] pnames = Stream.of(values).flatMap(v -> v.entrySet().stream()).map(s -> s.getKey()).toArray(String[]::new);;
-        Object[] pvalues = Stream.of(values).flatMap(v -> v.entrySet().stream()).map(s -> s.getValue()).toArray();
-        BeanWrapper paccessor = PropertyAccessorFactory.forBeanPropertyAccess(pdt);
-
+    void applyProperties(HashMap<String, Object>[] properties, Object object) throws BeansException {
+        String[] pnames = Stream.of(properties).flatMap(v -> v.entrySet().stream()).map(s -> s.getKey()).toArray(String[]::new);
+        Object[] pvalues = Stream.of(properties).flatMap(v -> v.entrySet().stream()).map(s -> s.getValue()).toArray();
+        BeanWrapper paccessor = PropertyAccessorFactory.forBeanPropertyAccess(object);
         for (int i = 0; i < pnames.length; i++) {
             paccessor.setPropertyValue(pnames[i], pvalues[i]);
         }
     }
+    
+   
+    
 }

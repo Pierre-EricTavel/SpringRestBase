@@ -5,11 +5,13 @@
  */
 package net.itta.springrest;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.Date;
 import java.util.List;
 
 
-public class Order {
+
+public class Order{
     
     private int no;
     private Date date;

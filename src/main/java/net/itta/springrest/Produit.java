@@ -1,11 +1,19 @@
 
 package net.itta.springrest;
 
-class Produit {
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.springframework.hateoas.Identifiable;
+import org.springframework.hateoas.ResourceSupport;
+
+
+
+public class Produit{
     private int id;
     private String nom;
     private String marque;
     private double prix;
+
+
 
     public int getId() {
         return id;
